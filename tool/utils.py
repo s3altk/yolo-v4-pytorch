@@ -306,13 +306,13 @@ def plot_boxes_cv2(img_path, boxes, save_img_path=None, class_names=None, color=
         if len(box) >= 7:
             cls_conf = box[5]
             cls_id = box[6]
-            print('Найден объект класса {0} с точностью {1:f3}'.format(class_names[cls_id], cls_conf))
+            print('Найден объект класса {0} с точностью {1}'.format(class_names[cls_id], cls_conf))
             img = cv2.putText(img, class_names[cls_id], (x1, y1-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, rgb, 1, cv2.LINE_AA)
         
         img = cv2.rectangle(img, (x1, y1), (x2, y2), rgb, 5)
 
     if save_img_path:
-        print('Размеченное изображение сохранено по пути {1}'.format(save_img_path))
+        print('Размеченное изображение сохранено по пути {0}'.format(save_img_path))
         cv2.imwrite(save_img_path, img)
     return img
 
