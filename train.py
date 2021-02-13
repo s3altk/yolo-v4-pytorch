@@ -223,7 +223,7 @@ def train(model, device, config, epochs=5, batch_size=1, save_cp=True, log_step=
         Скорость обучения:              {config.learning_rate}
         Размер трейна:                  {n_train}
         Размер валида:                  {n_val}
-        Кол-во точек сохранений:        {save_cp}
+        Включить сохранение весов:      {save_cp}
         Устройство:                     {device.type}
         Кол-во изображений:             {config.width}
         Оптимизатор:                    {config.TRAIN_OPTIMIZER}
