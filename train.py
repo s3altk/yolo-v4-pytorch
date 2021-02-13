@@ -196,7 +196,7 @@ def collate(batch):
     return images, bboxes
 
 
-def train(model, device, config, epochs=5, batch_size=1, save_cp=True, log_step=20, img_scale=0.5):
+def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True, log_step=20, img_scale=0.5):
     train_dataset = Yolo_dataset(config.train_label, config)
     val_dataset = Yolo_dataset(config.val_label, config)
 
@@ -291,11 +291,11 @@ def train(model, device, config, epochs=5, batch_size=1, save_cp=True, log_step=
 
             if save_cp:
                 try:
-                    os.mkdir(config.checkpoints)
+                    os.mkdir(save_dir)
                     logging.info('Создана директория для сохранения...')
                 except OSError:
                     pass
-                torch.save(model.state_dict(), os.path.join(config.checkpoints, f'Yolov4_epoch{epoch + 1}.pth'))
+                torch.save(model.state_dict(), os.path.join(save_dir, f'Yolov4_epoch{epoch + 1}.pth'))
                 logging.info(f'Веса эпохи {epoch + 1} сохранены')
 
     writer.close()
@@ -316,6 +316,7 @@ def get_args(**kwargs):
     parser.add_argument('-dir', '--data-dir', type=str, default=None,
                         help='Директория датасета', dest='dataset_dir')
     parser.add_argument('-pretrained', type=str, default=None, help='Веса, например, yolov4.conv.137.pth')
+    parser.add_argument('-save_dir', type=str, default=None, help='Директория для сохранения весов')
     parser.add_argument('-classes', type=int, default=80, help='Классы датасета')
     parser.add_argument('-train_label_path', dest='train_label', type=str, default='train.txt', help="Названия классов")
     parser.add_argument('-epochs', dest='TRAIN_EPOCHS', type=int, default=10, help="Кол-во эпох")
@@ -376,7 +377,8 @@ if __name__ == "__main__":
         train(model=model,
               config=cfg,
               epochs=cfg.TRAIN_EPOCHS,
-              device=device, )
+              device=device,
+              save_dir=cfg.save_dir)
     except KeyboardInterrupt:
         torch.save(model.state_dict(), 'Interrupt_weights.pth')
         logging.info('Текущие веса сохранены...')
