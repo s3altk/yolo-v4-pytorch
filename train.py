@@ -218,8 +218,8 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
     global_step = 0
     logging.info(f'''Запуск обучения:
         Кол-во эпох:                    {epochs}
-        Размер батча:                   {config.batch}
-        Кол-во мини батчей:             {config.subdivisions}
+        Размер партии:                  {config.batch}
+        Кол-во мини-партий:             {config.subdivisions}
         Скорость обучения:              {config.learning_rate}
         Размер трейна:                  {n_train}
         Размер валида:                  {n_val}
@@ -228,7 +228,7 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
         Кол-во изображений:             {config.width}
         Оптимизатор:                    {config.TRAIN_OPTIMIZER}
         Кол-во классов:                 {config.classes}
-        Названия классов:               {config.train_label}
+        Названия классов (файл):               {config.train_label}
     ''')
 
     def burnin_schedule(i):
@@ -250,6 +250,7 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
     model.train()
     for epoch in range(epochs):
         epoch_loss = 0
+        epoch_lr = 0
         epoch_step = 0
 
         with tqdm(total=n_train, desc=f'Эпоха {epoch + 1}/{epochs}', unit='img', ncols=50) as pbar:
@@ -267,6 +268,7 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
                 loss.backward()
 
                 epoch_loss += loss.item()
+                epoch_lr += scheduler.get_lr()[0] * config.batch
 
                 if global_step  % config.subdivisions == 0:
                     optimizer.step()
@@ -274,7 +276,7 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
                     model.zero_grad()
 
                 if global_step % (log_step * config.subdivisions) == 0:
-                    writer.add_scalar('train/Loss', loss.item(), global_step)
+                    writer.add_scalar('train/loss', loss.item(), global_step)
                     writer.add_scalar('train/loss_xy', loss_xy.item(), global_step)
                     writer.add_scalar('train/loss_wh', loss_wh.item(), global_step)
                     writer.add_scalar('train/loss_obj', loss_obj.item(), global_step)
@@ -288,11 +290,16 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
                                           scheduler.get_lr()[0] * config.batch))
 
                 pbar.update(images.shape[0])
+            
+            logging.info('Эпоха {}: функция потерь={}, скорость обучения={}'
+                                  .format(epoch + 1,
+                                          epoch_loss / epoch_step,
+                                          epoch_lr / epoch_step))
 
             if save_cp:
                 try:
                     os.mkdir(save_dir)
-                    logging.info('Создана директория для сохранения...')
+                    logging.info('Создана директория для сохранения')
                 except OSError:
                     pass
                 torch.save(model.state_dict(), os.path.join(save_dir, f'Yolov4_epoch{epoch + 1}.pth'))
