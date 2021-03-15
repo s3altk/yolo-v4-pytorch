@@ -289,21 +289,13 @@ def plot_boxes_cv2(img_path, boxes, save_img_path=None, class_names=None, color=
         y1 = int((box[1] - box[3] / 2.0) * height)
         x2 = int((box[0] + box[2] / 2.0) * width)
         y2 = int((box[1] + box[3] / 2.0) * height)
-        
-        rgb = (0, 0, 255) # синий, зеленый, красный
-        if len(boxes) == 1:
-            if color:
-                rgb = color
+
+        if color:
+            rgb = color
         else:
-            if class_names:
-                classes = len(class_names)
-                offset = cls_id * 123457 % classes
-                red = get_color(2, offset, classes)
-                green = get_color(1, offset, classes)
-                blue = get_color(0, offset, classes)
-                rgb = (red, green, blue)
+            rgb = (0, 0, 255) # синий, зеленый, красный
         
-        if len(box) >= 7:
+        if len(box) >= 7 and class_names:
             cls_conf = box[5]
             cls_id = box[6]
             print('Найден объект класса {0} с точностью {1}'.format(class_names[cls_id], cls_conf))
