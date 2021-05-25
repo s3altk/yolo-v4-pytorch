@@ -49,7 +49,6 @@ if __name__ == "__main__":
         except SystemExit:
             os._exit(0)
 
-
 def get_args(**kwargs):
     parser = argparse.ArgumentParser(description='Обучение модели на изображениях', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
@@ -196,6 +195,7 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
 
                 pbar.update(images.shape[0])
 
+        model.eval()
         test_loss, correct = 0, 0
 
         with torch.no_grad():
@@ -210,7 +210,7 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
         test_loss /= n_test
         correct /= n_test
 
-        logging.info(f'Результаты --> сред.знач. точности={(100 * correct):>0.1f}, сред.знач. функции потерь={test_loss:>7f}')
+        logging.info(f'Результаты --> сред.знач. точности={(100 * correct):>0.1f}, сред.знач. функции потерь={test_loss:>7f}\n')
 
         if save_cp:
             try:
@@ -221,6 +221,8 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
 
             torch.save(model.state_dict(), os.path.join(save_dir, f'yolov4.train.epoch{epoch + 1}.pth'))
             logging.info(f'Модель эпохи {epoch + 1} сохранена!')
+
+    logging.info(f'Обучение завершено!')
 
 
 class Yolo_loss(nn.Module):
@@ -352,7 +354,6 @@ class Yolo_loss(nn.Module):
         loss = loss_xy + loss_wh + loss_obj + loss_cls
 
         return loss
-
 
 def bboxes_iou(bboxes_a, bboxes_b, xyxy=True):
     if bboxes_a.shape[1] != 4 or bboxes_b.shape[1] != 4:
