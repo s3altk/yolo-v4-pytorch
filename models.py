@@ -27,10 +27,17 @@ if  __name__ == "__main__":
     img = Image.open(img_file).convert('RGB')
     sized_img = img.resize((608, 608))
     	
-    boxes = do_detect(model, sized_img, 0.5, n_classes, 0.4, torch.cuda.is_available())
-    class_names = load_class_names(classes_file)
+    try:
+        boxes = do_detect(model, sized_img, 0.5, n_classes, 0.4, torch.cuda.is_available())
+        class_names = load_class_names(classes_file)
 
-    plot_boxes_cv2(img_file, boxes, save_img_file, class_names)
+        plot_boxes_cv2(img_file, boxes, save_img_file, class_names)
+
+    except KeyboardInterrupt:
+        try:
+            sys.exit(0)
+        except SystemExit:
+            os._exit(0)
 
 
 class Yolov4(nn.Module):
