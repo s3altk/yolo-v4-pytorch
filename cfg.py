@@ -1,6 +1,7 @@
 from easydict import EasyDict
 
 Cfg = EasyDict()
+
 Cfg.batch = 64
 Cfg.subdivisions = 16
 Cfg.width = 608
@@ -23,6 +24,13 @@ Cfg.scales = .1, .1
 Cfg.cutmix = 0
 Cfg.mosaic = 1
 
+if Cfg.mosaic and Cfg.cutmix:
+    Cfg.mixup = 4
+elif Cfg.cutmix:
+    Cfg.mixup = 2
+elif Cfg.mosaic:
+    Cfg.mixup = 3
+
 Cfg.letter_box = 0
 Cfg.jitter = 0.2
 Cfg.classes = 80
@@ -33,18 +41,11 @@ Cfg.flip = 1
 Cfg.blur = 0
 Cfg.gaussian = 0
 Cfg.boxes = 60
-Cfg.TRAIN_EPOCHS = 300
 Cfg.train_label = 'data/train.txt'
 Cfg.val_label = 'data/val.txt'
+
+Cfg.TRAIN_EPOCHS = 300
 Cfg.TRAIN_OPTIMIZER = 'adam'
-
-
-if Cfg.mosaic and Cfg.cutmix:
-    Cfg.mixup = 4
-elif Cfg.cutmix:
-    Cfg.mixup = 2
-elif Cfg.mosaic:
-    Cfg.mixup = 3
+Cfg.TRAIN_TENSORBOARD_DIR = 'log'
 
 Cfg.checkpoints = 'checkpoints'
-Cfg.TRAIN_TENSORBOARD_DIR = 'log'
