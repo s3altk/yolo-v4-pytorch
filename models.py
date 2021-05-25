@@ -1,78 +1,66 @@
 import torch
-from torch import nn
+import torch.nn as nn
 import torch.nn.functional as F
 
+import os, sys
+from PIL import Image
+from tool.utils import *
 
-class Mish(torch.nn.Module):
-    def __init__(self):
+if  __name__ == "__main__":
+    if len(sys.argv) == 6:
+        n_classes = int(sys.argv[1])
+        pretrained = sys.argv[2]
+        img_file = sys.argv[3]
+        save_img_file = sys.argv[4]
+        classes_file = sys.argv[5]
+    else:
+        print('Используйте: !python {models.py} {n_classes} {pretrained} {img_file} {save_img_file} {classes_file}')
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    pretrained_dict = torch.load(pretrained, map_location=device)
+
+    model = Yolov4(n_classes=n_classes)
+    model.load_state_dict(pretrained_dict)
+    model.to(device=device)
+    
+    img = Image.open(img_file).convert('RGB')
+    sized_img = img.resize((608, 608))
+    	
+    boxes = do_detect(model, sized_img, 0.5, n_classes, 0.4, torch.cuda.is_available())
+    class_names = load_class_names(classes_file)
+
+    plot_boxes_cv2(img_file, boxes, save_img_file, class_names)
+
+
+class Yolov4(nn.Module):
+    def __init__(self, pretrained=None, n_classes=80):
         super().__init__()
 
-    def forward(self, x):
-        x = x * (torch.tanh(torch.nn.functional.softplus(x)))
-        return x
+        output_ch = (4 + 1 + n_classes) * 3
 
+        self.down1 = DownSample1()
+        self.down2 = DownSample2()
+        self.down3 = DownSample3()
+        self.down4 = DownSample4()
+        self.down5 = DownSample5()
+        self.neck = Neck()
+        self.head = Head(output_ch)
 
-class Upsample(nn.Module):
-    def __init__(self):
-        super(Upsample, self).__init__()
-
-    def forward(self, x, target_size):
-        assert (x.data.dim() == 4)
-        _, _, H, W = target_size
-        return F.interpolate(x, size=(H, W), mode='nearest')
-
-
-class Conv_Bn_Activation(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size, stride, activation, bn=True, bias=False):
-        super().__init__()
-        pad = (kernel_size - 1) // 2
-        self.conv = nn.ModuleList()
-        if bias:
-            self.conv.append(nn.Conv2d(in_channels, out_channels, kernel_size, stride, pad))
-        else:
-            self.conv.append(nn.Conv2d(in_channels, out_channels, kernel_size, stride, pad, bias=False))
-        if bn:
-            self.conv.append(nn.BatchNorm2d(out_channels))
-        if activation == "mish":
-            self.conv.append(Mish())
-        elif activation == "relu":
-            self.conv.append(nn.ReLU(inplace=True))
-        elif activation == "leaky":
-            self.conv.append(nn.LeakyReLU(0.1, inplace=True))
-        elif activation == "linear":
-            pass
-        else:
-            print("Ошибка активации: {} {} {}".format(sys._getframe().f_code.co_filename, sys._getframe().f_code.co_name, sys._getframe().f_lineno))
-
-    def forward(self, x):
-        for l in self.conv:
-            x = l(x)
-        return x
-
-
-class ResBlock(nn.Module):
-    def __init__(self, ch, nblocks=1, shortcut=True):
-        super().__init__()
-        self.shortcut = shortcut
-        self.module_list = nn.ModuleList()
-        for i in range(nblocks):
-            resblock_one = nn.ModuleList()
-            resblock_one.append(Conv_Bn_Activation(ch, ch, 1, 1, 'mish'))
-            resblock_one.append(Conv_Bn_Activation(ch, ch, 3, 1, 'mish'))
-            self.module_list.append(resblock_one)
-
-    def forward(self, x):
-        for module in self.module_list:
-            h = x
-            for res in module:
-                h = res(h)
-            x = x + h if self.shortcut else h
-        return x
+    def forward(self, input):
+        d1 = self.down1(input)
+        d2 = self.down2(d1)
+        d3 = self.down3(d2)
+        d4 = self.down4(d3)
+        d5 = self.down5(d4)
+        x20, x13, x6 = self.neck(d5, d4, d3)
+        output = self.head(x20, x13, x6)
+        return output
 
 
 class DownSample1(nn.Module):
     def __init__(self):
         super().__init__()
+
         self.conv1 = Conv_Bn_Activation(3, 32, 3, 1, 'mish')
         self.conv2 = Conv_Bn_Activation(32, 64, 3, 2, 'mish')
         self.conv3 = Conv_Bn_Activation(64, 64, 1, 1, 'mish')
@@ -95,10 +83,10 @@ class DownSample1(nn.Module):
         x8 = self.conv8(x7)
         return x8
 
-
 class DownSample2(nn.Module):
     def __init__(self):
         super().__init__()
+
         self.conv1 = Conv_Bn_Activation(64, 128, 3, 2, 'mish')
         self.conv2 = Conv_Bn_Activation(128, 64, 1, 1, 'mish')
         self.conv3 = Conv_Bn_Activation(128, 64, 1, 1, 'mish')
@@ -116,10 +104,10 @@ class DownSample2(nn.Module):
         x5 = self.conv5(x4)
         return x5
 
-
 class DownSample3(nn.Module):
     def __init__(self):
         super().__init__()
+
         self.conv1 = Conv_Bn_Activation(128, 256, 3, 2, 'mish')
         self.conv2 = Conv_Bn_Activation(256, 128, 1, 1, 'mish')
         self.conv3 = Conv_Bn_Activation(256, 128, 1, 1, 'mish')
@@ -137,10 +125,10 @@ class DownSample3(nn.Module):
         x5 = self.conv5(x4)
         return x5
 
-
 class DownSample4(nn.Module):
     def __init__(self):
         super().__init__()
+
         self.conv1 = Conv_Bn_Activation(256, 512, 3, 2, 'mish')
         self.conv2 = Conv_Bn_Activation(512, 256, 1, 1, 'mish')
         self.conv3 = Conv_Bn_Activation(512, 256, 1, 1, 'mish')
@@ -158,10 +146,10 @@ class DownSample4(nn.Module):
         x5 = self.conv5(x4)
         return x5
 
-
 class DownSample5(nn.Module):
     def __init__(self):
         super().__init__()
+
         self.conv1 = Conv_Bn_Activation(512, 1024, 3, 2, 'mish')
         self.conv2 = Conv_Bn_Activation(1024, 512, 1, 1, 'mish')
         self.conv3 = Conv_Bn_Activation(1024, 512, 1, 1, 'mish')
@@ -179,10 +167,10 @@ class DownSample5(nn.Module):
         x5 = self.conv5(x4)
         return x5
 
-
 class Neck(nn.Module):
     def __init__(self):
         super().__init__()
+
         self.conv1 = Conv_Bn_Activation(1024, 512, 1, 1, 'leaky')
         self.conv2 = Conv_Bn_Activation(512, 1024, 3, 1, 'leaky')
         self.conv3 = Conv_Bn_Activation(1024, 512, 1, 1, 'leaky')
@@ -240,10 +228,10 @@ class Neck(nn.Module):
         x20 = self.conv20(x19)
         return x20, x13, x6
 
-
-class Yolov4Head(nn.Module):
+class Head(nn.Module):
     def __init__(self, output_ch):
         super().__init__()
+
         self.conv1 = Conv_Bn_Activation(128, 256, 3, 1, 'leaky')
         self.conv2 = Conv_Bn_Activation(256, output_ch, 1, 1, 'linear', bn=False, bias=True)
         self.conv3 = Conv_Bn_Activation(128, 256, 3, 2, 'leaky')
@@ -287,63 +275,74 @@ class Yolov4Head(nn.Module):
         return [x2, x10, x18]
 
 
-class Yolov4(nn.Module):
-    def __init__(self, pretrained=None, n_classes=80):
+class Conv_Bn_Activation(nn.Module):
+    def __init__(self, in_channels, out_channels, kernel_size, stride, activation, bn=True, bias=False):
         super().__init__()
-        output_ch = (4 + 1 + n_classes) * 3
-        self.down1 = DownSample1()
-        self.down2 = DownSample2()
-        self.down3 = DownSample3()
-        self.down4 = DownSample4()
-        self.down5 = DownSample5()
-        self.neck = Neck()
-        if pretrained:
-            _model = nn.Sequential(self.down1, self.down2, self.down3, self.down4, self.down5, self.neck)
-            pretrained_dict = torch.load(pretrained)
-            model_dict = _model.state_dict()
-            pretrained_dict = {k1: v for (k, v), k1 in zip(pretrained_dict.items(), model_dict)}
-            model_dict.update(pretrained_dict)
-            _model.load_state_dict(model_dict)
-        self.head = Yolov4Head(output_ch)
 
-    def forward(self, input):
-        d1 = self.down1(input)
-        d2 = self.down2(d1)
-        d3 = self.down3(d2)
-        d4 = self.down4(d3)
-        d5 = self.down5(d4)
-        x20, x13, x6 = self.neck(d5, d4, d3)
-        output = self.head(x20, x13, x6)
-        return output
+        self.conv = nn.ModuleList()
 
+        pad = (kernel_size - 1) // 2
 
-if  __name__ == "__main__":
-    import sys
-    from PIL import Image
-    from tool.utils import *
-    import os
+        if bias:
+            self.conv.append(nn.Conv2d(in_channels, out_channels, kernel_size, stride, pad))
+        else:
+            self.conv.append(nn.Conv2d(in_channels, out_channels, kernel_size, stride, pad, bias=False))
+            
+        if bn:
+            self.conv.append(nn.BatchNorm2d(out_channels))
 
-    if len(sys.argv) == 6:
-        num_classes = int(sys.argv[1])
-        weights_path = sys.argv[2]
-        img_path = sys.argv[3]
-        save_img_path = sys.argv[4]
-        names_path = sys.argv[5]
-    else:
-        print('Используйте: !python {models.py} {num_classes} {weights_path} {img_path} {save_img_path} {names_path}')
+        if activation == "mish":
+            self.conv.append(Mish())
+        elif activation == "relu":
+            self.conv.append(nn.ReLU(inplace=True))
+        elif activation == "leaky":
+            self.conv.append(nn.LeakyReLU(0.1, inplace=True))
+        elif activation == "linear":
+            pass
+        else:
+            print(f'Ошибка активации: {sys._getframe().f_code.co_filename} {sys._getframe().f_code.co_name} {sys._getframe().f_lineno}')
 
-    model = Yolov4(n_classes=num_classes)
-    pretrained_dict = torch.load(weights_path, map_location=torch.device('cuda'))
-    model.load_state_dict(pretrained_dict)
+    def forward(self, x):
+        for l in self.conv:
+            x = l(x)
+        return x
 
-    use_cuda = 1
-    if use_cuda:
-        model.cuda()
-    
-    img = Image.open(img_path).convert('RGB')
-    sized = img.resize((608, 608))
-    	
-    boxes = do_detect(model, sized, 0.5, num_classes, 0.4, use_cuda)
-    class_names = load_class_names(names_path)
+class ResBlock(nn.Module):
+    def __init__(self, ch, nblocks=1, shortcut=True):
+        super().__init__()
 
-    plot_boxes_cv2(img_path, boxes, save_img_path, class_names)
+        self.shortcut = shortcut
+        self.module_list = nn.ModuleList()
+        
+        for i in range(nblocks):
+            resblock_one = nn.ModuleList()
+            resblock_one.append(Conv_Bn_Activation(ch, ch, 1, 1, 'mish'))
+            resblock_one.append(Conv_Bn_Activation(ch, ch, 3, 1, 'mish'))
+
+            self.module_list.append(resblock_one)
+
+    def forward(self, x):
+        for module in self.module_list:
+            h = x
+            for res in module:
+                h = res(h)
+
+            x = x + h if self.shortcut else h
+        return x
+
+class Upsample(nn.Module):
+    def __init__(self):
+        super(Upsample, self).__init__()
+
+    def forward(self, x, target_size):
+        assert (x.data.dim() == 4)
+        _, _, H, W = target_size
+        return F.interpolate(x, size=(H, W), mode='nearest')
+
+class Mish(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        x = x * (torch.tanh(F.softplus(x)))
+        return x
