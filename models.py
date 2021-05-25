@@ -6,6 +6,7 @@ import os, sys
 from PIL import Image
 from tool.utils import *
 
+
 if  __name__ == "__main__":
     if len(sys.argv) == 6:
         n_classes = int(sys.argv[1])
