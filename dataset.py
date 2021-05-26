@@ -7,21 +7,6 @@ import matplotlib.pyplot as plt
 from torch.utils.data.dataset import Dataset
 from cfg import Cfg
 
-
-if __name__ == "__main__":
-    random.seed(2021)
-    np.random.seed(2021)
-
-    Cfg.dataset_dir = '/mnt/e/Dataset'
-    dataset = Yolo_dataset(Cfg.train_label, Cfg)
-
-    for i in range(100):
-        out_img, out_bboxes = dataset.__getitem__(i)
-        a = draw_box(out_img.copy(), out_bboxes.astype(np.int32))
-        plt.imshow(a.astype(np.int32))
-        plt.show()
-
-
 class Yolo_dataset(Dataset):
     def __init__(self, lable_path, cfg):
         super(Yolo_dataset, self).__init__()
@@ -385,3 +370,16 @@ def draw_box(img, bboxes):
     for b in bboxes:
         img = cv2.rectangle(img, (b[0], b[1]), (b[2], b[3]), (0, 255, 0), 2)
     return img
+
+if __name__ == "__main__":
+    random.seed(2021)
+    np.random.seed(2021)
+
+    Cfg.dataset_dir = '/mnt/e/Dataset'
+    dataset = Yolo_dataset(Cfg.train_label, Cfg)
+
+    for i in range(100):
+        out_img, out_bboxes = dataset.__getitem__(i)
+        a = draw_box(out_img.copy(), out_bboxes.astype(np.int32))
+        plt.imshow(a.astype(np.int32))
+        plt.show()
