@@ -68,7 +68,7 @@ class Yolo_dataset(Dataset):
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
             oh, ow, oc = img.shape
-            dh, dw = np.array(np.array([oh, ow, oc]) * self.cfg.jitter, dtype=np.int)
+            dh, dw, dc = np.array(np.array([oh, ow, oc]) * self.cfg.jitter, dtype=np.int)
 
             dhue = rand_uniform_strong(-self.cfg.hue, self.cfg.hue)
             dsat = rand_scale(self.cfg.saturation)
