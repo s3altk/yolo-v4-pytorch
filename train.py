@@ -27,7 +27,7 @@ def get_args(**kwargs):
     parser.add_argument('-pretrained', type=str, default=None, help='Предобученная модель')
     parser.add_argument('-save_dir', type=str, default=None, help='Директория для сохранения модели')
     parser.add_argument('-classes', type=int, default=80, help='Количество классов')
-    parser.add_argument('-train_label_path', dest='train_label', type=str, default='train.txt', help="Наименования классов")
+    parser.add_argument('-train_label', dest='train_label', type=str, default='train.txt', help="Аннотация датасета")
     parser.add_argument('-epochs', dest='TRAIN_EPOCHS', type=int, default=10, help="Количество эпох")
     
     args = vars(parser.parse_args())
@@ -58,7 +58,7 @@ def init_logger(log_file=None, log_dir=None, log_level=logging.INFO, mode='w', s
 
     print(f'Файл логов находится в {log_file}')
     
-    fmt = '%(asctime)s %(filename)s[line:%(lineno)d] %(levelname)s: %(message)s'
+    fmt = '%(asctime)s %(filename)s[line:%(lineno)d] %(levelname)s:\n%(message)s\n'
 
     logging.basicConfig(level=logging.DEBUG,
                         format=fmt,
@@ -95,7 +95,7 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
             Кол-во изображений:             {config.width}
             Оптимизатор:                    {config.TRAIN_OPTIMIZER}
             Кол-во классов:                 {config.classes}
-            Названия классов (файл):        {config.train_label}
+            Аннотация датасета:             {config.train_label}
     ''')
 
     def collate(batch):
@@ -138,34 +138,32 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
     model.train()
 
     for epoch in range(epochs):
-        logging.info(f'Эпоха {epoch + 1}\n-------------------------------')
-        
-        with tqdm(total=n_train, desc=f'[{(epoch + 1):>3d}/{epochs:>3d}]', unit='img', ncols=50) as pbar:
+        with tqdm(total=n_train, desc=f'[Эпоха {(epoch + 1):>3d}/{epochs:>3d}]', unit='img', ncols=50) as pbar:
             for batch, (X, y) in enumerate(train_loader):
-                images, bboxes = X.to(device=device, dtype=torch.float32), y.to(device=device)
+              images, bboxes = X.to(device=device, dtype=torch.float32), y.to(device=device)
    
-                bboxes_pred = model(images)
+              bboxes_pred = model(images)
 
-                loss = loss_fn(bboxes_pred, bboxes)
-                loss.backward()
+              loss = loss_fn(bboxes_pred, bboxes)
+              loss.backward()
 
-                if batch  % config.subdivisions == 0:
-                    optimizer.step()
-                    scheduler.step()
-                    model.zero_grad()
+              if batch  % config.subdivisions == 0:
+                optimizer.step()
+                scheduler.step()
+                model.zero_grad()
 
-                if batch % (log_step * config.subdivisions) == 0:
-                    loss, current = loss.item(), batch * len(images)
-                    lr = scheduler.get_lr()[0] * config.batch
-                    logging.info(f'[{current:>5d}/{n_train:>5d}] --> функция потерь={loss:>7f}, скорость обучения={lr:>7f}')
+              if batch % (log_step * config.subdivisions) == 0:
+                loss, current = loss.item(), batch * len(images)
+                lr = scheduler.get_lr()[0] * config.batch
+                logging.info(f'[{current:>3d}/{n_train:>3d}]:  Функция потерь: {loss:>5f}   Скорость обучения: {lr}')
 
-                pbar.update(images.shape[0])
+              pbar.update(images.shape[0])
 
         model.eval()
         test_loss, correct = 0, 0
 
         with torch.no_grad():
-            for X, y in enumerate(test_loader):
+            for batch, (X, y) in enumerate(test_loader):
                 images, bboxes = X.to(device=device, dtype=torch.float32), y.to(device=device)
 
                 bboxes_pred = model(images)
@@ -176,7 +174,7 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
         test_loss /= n_test
         correct /= n_test
 
-        logging.info(f'Результаты --> сред.знач. точности={(100 * correct):>0.1f}, сред.знач. функции потерь={test_loss:>7f}\n')
+        logging.info(f'Результаты:   Сред. знач. точности: {(100 * correct):>0.1f}    Сред. знач. функции потерь: {test_loss:>7f}\n')
 
         if save_cp:
             try:
