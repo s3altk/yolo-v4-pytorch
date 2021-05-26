@@ -6,40 +6,6 @@ import os, sys
 from PIL import Image
 from tool.utils import *
 
-
-if  __name__ == "__main__":
-    if len(sys.argv) == 6:
-        n_classes = int(sys.argv[1])
-        pretrained = sys.argv[2]
-        img_file = sys.argv[3]
-        save_img_file = sys.argv[4]
-        classes_file = sys.argv[5]
-    else:
-        print('Используйте: !python {models.py} {n_classes} {pretrained} {img_file} {save_img_file} {classes_file}')
-
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    pretrained_dict = torch.load(pretrained, map_location=device)
-
-    model = Yolov4(n_classes=n_classes)
-    model.load_state_dict(pretrained_dict)
-    model.to(device=device)
-    
-    img = Image.open(img_file).convert('RGB')
-    sized_img = img.resize((608, 608))
-    	
-    try:
-        boxes = do_detect(model, sized_img, 0.5, n_classes, 0.4, torch.cuda.is_available())
-        class_names = load_class_names(classes_file)
-
-        plot_boxes_cv2(img_file, boxes, save_img_file, class_names)
-
-    except KeyboardInterrupt:
-        try:
-            sys.exit(0)
-        except SystemExit:
-            os._exit(0)
-
-
 class Yolov4(nn.Module):
     def __init__(self, pretrained=None, n_classes=80):
         super().__init__()
@@ -354,3 +320,35 @@ class Mish(nn.Module):
     def forward(self, x):
         x = x * (torch.tanh(F.softplus(x)))
         return x
+
+if  __name__ == "__main__":
+    if len(sys.argv) == 6:
+        n_classes = int(sys.argv[1])
+        pretrained = sys.argv[2]
+        img_file = sys.argv[3]
+        save_img_file = sys.argv[4]
+        classes_file = sys.argv[5]
+    else:
+        print('Используйте: !python {models.py} {n_classes} {pretrained} {img_file} {save_img_file} {classes_file}')
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    pretrained_dict = torch.load(pretrained, map_location=device)
+
+    model = Yolov4(n_classes=n_classes)
+    model.load_state_dict(pretrained_dict)
+    model.to(device=device)
+    
+    img = Image.open(img_file).convert('RGB')
+    sized_img = img.resize((608, 608))
+    	
+    try:
+        boxes = do_detect(model, sized_img, 0.5, n_classes, 0.4, torch.cuda.is_available())
+        class_names = load_class_names(classes_file)
+
+        plot_boxes_cv2(img_file, boxes, save_img_file, class_names)
+
+    except KeyboardInterrupt:
+        try:
+            sys.exit(0)
+        except SystemExit:
+            os._exit(0)
