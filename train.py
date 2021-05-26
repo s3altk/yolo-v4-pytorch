@@ -15,40 +15,6 @@ from models import Yolov4
 from dataset import Yolo_dataset
 from easydict import EasyDict as edict
 
-
-if __name__ == "__main__":
-    cfg = get_args(**Cfg)
-    os.environ["CUDA_VISIBLE_DEVICES"] = cfg.gpu
-
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = Yolov4(cfg.pretrained, n_classes=cfg.classes)
-
-    if torch.cuda.device_count() > 1:
-        model = torch.nn.DataParallel(model)
-
-    model.to(device=device)
-
-    logging = init_logger(log_dir='log')
-    logging.info(f'Используется устройство: {device}')
-
-    try:
-        train(model=model,
-              config=cfg,
-              epochs=cfg.TRAIN_EPOCHS,
-              device=device,
-              save_dir=cfg.save_dir)
-
-    except KeyboardInterrupt:
-        interrupt_dir = 'yolov4.train.interrupt.pth'
-
-        torch.save(model.state_dict(), interrupt_dir)
-        logging.info(f'Текущая модель сохранена в {interrupt_dir}')
-
-        try:
-            sys.exit(0)
-        except SystemExit:
-            os._exit(0)
-
 def get_args(**kwargs):
     parser = argparse.ArgumentParser(description='Обучение модели на изображениях', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
@@ -375,3 +341,36 @@ def bboxes_iou(bboxes_a, bboxes_b, xyxy=True):
     area_i = torch.prod(br - tl, 2) * en
 
     return area_i / (area_a[:, None] + area_b - area_i)
+
+if __name__ == "__main__":
+    cfg = get_args(**Cfg)
+    os.environ["CUDA_VISIBLE_DEVICES"] = cfg.gpu
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = Yolov4(cfg.pretrained, n_classes=cfg.classes)
+
+    if torch.cuda.device_count() > 1:
+        model = torch.nn.DataParallel(model)
+
+    model.to(device=device)
+
+    logging = init_logger(log_dir='log')
+    logging.info(f'Используется устройство: {device}')
+
+    try:
+        train(model=model,
+              config=cfg,
+              epochs=cfg.TRAIN_EPOCHS,
+              device=device,
+              save_dir=cfg.save_dir)
+
+    except KeyboardInterrupt:
+        interrupt_dir = 'yolov4.train.interrupt.pth'
+
+        torch.save(model.state_dict(), interrupt_dir)
+        logging.info(f'Текущая модель сохранена в {interrupt_dir}')
+
+        try:
+            sys.exit(0)
+        except SystemExit:
+            os._exit(0)
