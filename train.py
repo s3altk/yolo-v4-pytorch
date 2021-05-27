@@ -132,44 +132,42 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
 
     loss_fn = Yolo_loss(device=device, batch=config.batch // config.subdivisions, n_classes=config.classes)
 
-    train_loader = DataLoader(train_dataset, batch_size=config.batch // config.subdivisions, shuffle=True, num_workers=8, pin_memory=True, drop_last=True, collate_fn=collate)
-    test_loader = DataLoader(test_dataset, batch_size=config.batch // config.subdivisions, shuffle=True, num_workers=8, pin_memory=True, drop_last=True)
+    train_loader = DataLoader(train_dataset, batch_size=config.batch // config.subdivisions, shuffle=True, num_workers=2, pin_memory=True, drop_last=True, collate_fn=collate)
+    test_loader = DataLoader(test_dataset, batch_size=config.batch // config.subdivisions, shuffle=True, num_workers=2, pin_memory=True, drop_last=True, collate_fn=collate)
 
     model.train()
 
     for epoch in range(epochs):
-        with tqdm(total=n_train, desc=f'[Эпоха {(epoch + 1):>3d}/{epochs:>3d}]', unit='img', ncols=50) as pbar:
-            for batch, (X, y) in enumerate(train_loader):
-              images, bboxes = X.to(device=device, dtype=torch.float32), y.to(device=device)
-   
-              bboxes_pred = model(images)
+        for batch, (X, y) in enumerate(train_loader):
+          images, bboxes = X.to(device=device, dtype=torch.float32), y.to(device=device)
 
-              loss = loss_fn(bboxes_pred, bboxes)
-              loss.backward()
+          bboxes_pred = model(images)
 
-              if batch  % config.subdivisions == 0:
-                optimizer.step()
-                scheduler.step()
-                model.zero_grad()
+          loss = loss_fn(bboxes_pred, bboxes)
+          loss.backward()
 
-              if batch % (log_step * config.subdivisions) == 0:
-                loss, current = loss.item(), batch * len(images)
-                lr = scheduler.get_lr()[0] * config.batch
-                logging.info(f'[{current:>3d}/{n_train:>3d}]:  Функция потерь: {loss:>5f}   Скорость обучения: {lr}')
+          if batch  % config.subdivisions == 0:
+            optimizer.step()
+            scheduler.step()
+            model.zero_grad()
 
-              pbar.update(images.shape[0])
+          if batch % (log_step * config.subdivisions) == 0:
+            loss, current = loss.item(), batch * len(images)
+            lr = scheduler.get_lr()[0] * config.batch
+            logging.info(f'Эпоха {epoch}  [{current:>3d}/{n_train:>3d}]:  Функция потерь: {loss:>5f}   Скорость обучения: {lr}')
 
         model.eval()
         test_loss, correct = 0, 0
 
         with torch.no_grad():
-            for batch, (X, y) in enumerate(test_loader):
+            for X, y in test_loader:
                 images, bboxes = X.to(device=device, dtype=torch.float32), y.to(device=device)
 
                 bboxes_pred = model(images)
-                
+                max_bboxes_pred = max(zip(bboxes_pred, range(len(bboxes_pred))))[1]
+
                 test_loss += loss_fn(bboxes_pred, bboxes).item()
-                correct += (bboxes_pred.argmax(1) == bboxes).type(torch.float).sum().item()
+                correct += (max_bboxes_pred == bboxes).type(torch.float).sum().item()
 
         test_loss /= n_test
         correct /= n_test
