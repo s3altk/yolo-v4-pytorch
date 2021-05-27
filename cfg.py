@@ -47,5 +47,3 @@ Cfg.val_label = 'data/val.txt'
 Cfg.TRAIN_EPOCHS = 300
 Cfg.TRAIN_OPTIMIZER = 'adam'
 Cfg.TRAIN_TENSORBOARD_DIR = 'log'
-
-Cfg.checkpoints = 'checkpoints'
