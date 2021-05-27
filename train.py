@@ -78,10 +78,10 @@ def init_logger(log_file=None, log_dir=None, log_level=logging.INFO, mode='w', s
 
 def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True, log_step=20, img_scale=0.5):
     train_dataset = Yolo_dataset(config.train_label, config)
-    test_dataset = Yolo_dataset(config.val_label, config)
+    val_dataset = Yolo_dataset(config.val_label, config)
 
     n_train = len(train_dataset)
-    n_test = len(test_dataset)
+    n_val = len(val_dataset)
 
     logging.info(f'''Запуск обучения:
             Кол-во эпох:                    {epochs}
@@ -89,10 +89,10 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
             Размер мини-партии:             {config.subdivisions}
             Скорость обучения:              {config.learning_rate}
             Размер обуч. выборки:           {n_train}
-            Размер тест. выборки:           {n_test}
-            Включить сохранение модели:     {save_cp}
+            Размер провер. выборки:         {n_val}
+            Сохранение модели:              {save_cp}
             Устройство:                     {device.type}
-            Кол-во изображений:             {config.width}
+            Размер изображений:             {config.w}x{config.h}
             Оптимизатор:                    {config.TRAIN_OPTIMIZER}
             Кол-во классов:                 {config.classes}
             Аннотация датасета:             {config.train_label}
@@ -130,20 +130,19 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
     optimizer = optim.Adam(model.parameters(), lr=config.learning_rate / config.batch, betas=(0.9, 0.999), eps=1e-08)
     scheduler = optim.lr_scheduler.LambdaLR(optimizer, burnin_schedule)
 
-    loss_fn = Yolo_loss(device=device, batch=config.batch // config.subdivisions, n_classes=config.classes)
+    criterion = Yolo_loss(device=device, batch=config.batch // config.subdivisions, n_classes=config.classes)
 
     train_loader = DataLoader(train_dataset, batch_size=config.batch // config.subdivisions, shuffle=True, num_workers=2, pin_memory=True, drop_last=True, collate_fn=collate)
-    test_loader = DataLoader(test_dataset, batch_size=config.batch // config.subdivisions, shuffle=True, num_workers=2, pin_memory=True, drop_last=True, collate_fn=collate)
+    val_loader = DataLoader(val_dataset, batch_size=config.batch // config.subdivisions, shuffle=True, num_workers=2, pin_memory=True, drop_last=True, collate_fn=collate)
 
     model.train()
-
     for epoch in range(epochs):
         for batch, (X, y) in enumerate(train_loader):
           images, bboxes = X.to(device=device, dtype=torch.float32), y.to(device=device)
 
           bboxes_pred = model(images)
 
-          loss = loss_fn(bboxes_pred, bboxes)
+          loss = criterion(bboxes_pred, bboxes)
           loss.backward()
 
           if batch  % config.subdivisions == 0:
@@ -157,22 +156,23 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
             logging.info(f'Эпоха {epoch}  [{current:>3d}/{n_train:>3d}]:  Функция потерь: {loss:>5f}   Скорость обучения: {lr}')
 
         model.eval()
-        test_loss, correct = 0, 0
+        loss_sum, correct_sum = 0, 0
 
         with torch.no_grad():
-            for X, y in test_loader:
+            for X, y in val_loader:
                 images, bboxes = X.to(device=device, dtype=torch.float32), y.to(device=device)
 
                 bboxes_pred = model(images)
-                max_bboxes_pred = max(zip(bboxes_pred, range(len(bboxes_pred))))[1]
+                
+                loss_sum += criterion(bboxes_pred, bboxes).item()
+                
+                correct = torch.eq(torch.round(bboxes_pred).type(bboxes.type()), bboxes).view(-1)
+                correct_sum += torch.sum(correct).item()
 
-                test_loss += loss_fn(bboxes_pred, bboxes).item()
-                correct += (max_bboxes_pred == bboxes).type(torch.float).sum().item()
+        avg_loss = loss_sum / n_val
+        avg_acc = correct_sum / n_val
 
-        test_loss /= n_test
-        correct /= n_test
-
-        logging.info(f'Результаты:   Сред. знач. точности: {(100 * correct):>0.1f}    Сред. знач. функции потерь: {test_loss:>7f}\n')
+        logging.info(f'Результаты:   Сред. знач. точности: {(100 * avg_acc):>0.1f}    Сред. знач. функции потерь: {avg_loss:>7f}\n')
 
         if save_cp:
             try:
