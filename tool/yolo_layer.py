@@ -1,5 +1,5 @@
 import torch.nn as nn
-import torch.nn.functional as F+
+import torch.nn.functional as F
 
 def get_targets(output, conf_thresh, num_classes, anchors, num_anchors, scale_x_y, only_objectness=1, validation=False):
     bxy_list = []
