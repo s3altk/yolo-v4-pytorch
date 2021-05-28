@@ -98,7 +98,7 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
             Аннотация датасета:             {config.train_label}
     ''')
 
-    def collate(batch):
+    def train_collate(batch):
         images = []
         bboxes = []
 
@@ -114,6 +114,9 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
         bboxes = torch.from_numpy(bboxes)
 
         return images, bboxes
+    
+    def val_collate(batch):
+        return tuple(zip(*batch))
 
     def burnin_schedule(i):
         if i < config.burn_in:
@@ -132,8 +135,8 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
 
     criterion = Yolo_loss(device=device, batch=config.batch // config.subdivisions, n_classes=config.classes)
 
-    train_loader = DataLoader(train_dataset, batch_size=config.batch // config.subdivisions, shuffle=True, num_workers=2, pin_memory=True, drop_last=True, collate_fn=collate)
-    val_loader = DataLoader(val_dataset, batch_size=config.batch // config.subdivisions, shuffle=True, num_workers=2, pin_memory=True, drop_last=True, collate_fn=collate)
+    train_loader = DataLoader(train_dataset, batch_size=config.batch // config.subdivisions, shuffle=True, num_workers=2, pin_memory=True, drop_last=True, collate_fn=train_collate)
+    val_loader = DataLoader(val_dataset, batch_size=config.batch // config.subdivisions, shuffle=True, num_workers=2, pin_memory=True, drop_last=True, collate_fn=val_collate)
 
     model.train()
     for epoch in range(epochs):
