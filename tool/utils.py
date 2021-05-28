@@ -12,7 +12,6 @@ import numpy as np
 
 from PIL import Image, ImageDraw, ImageFont
 
-
 def do_detect(model, img, conf_thresh, n_classes, nms_thresh, use_cuda=1):
     model.eval()
     t0 = time.time()
@@ -81,12 +80,24 @@ def do_detect(model, img, conf_thresh, n_classes, nms_thresh, use_cuda=1):
 
     print('----------------------------------------')
     print('     Классификация : %f' % (t3 - t2))
-    print('    Детектирование : %f' % (t4 - t3))
-    print('             Всего : %f' % (t4 - t0))
+    print('       Локализация : %f' % (t4 - t3))
+    print('    Детектирование : %f' % (t4 - t0))
     print('----------------------------------------')
 
     return boxes
 
+def get_region_boxes(boxes_and_confs):
+    boxes_list = []
+    confs_list = []
+
+    for item in boxes_and_confs:
+        boxes_list.append(item[0])
+        confs_list.append(item[1])
+
+    boxes = torch.cat(boxes_list, dim=1)
+    confs = torch.cat(confs_list, dim=1)
+        
+    return [boxes, confs]
 
 def get_region_boxes_out_model(output, conf_thresh, num_classes, anchors, num_anchors, only_objectness=1, validation=False):
     anchor_step = len(anchors) // num_anchors
@@ -171,7 +182,6 @@ def softmax(x):
     x = x / np.expand_dims(x.sum(axis=1), axis=1)
     return x
 
-
 def nms(boxes, nms_thresh):
     if len(boxes) == 0:
         return boxes
@@ -237,7 +247,6 @@ def bbox_iou(box1, box2, x1y1x2y2=True):
 
     return carea / uarea
 
-
 def load_class_names(namesfile):
     class_names = []
 
@@ -249,7 +258,6 @@ def load_class_names(namesfile):
         class_names.append(line)
 
     return class_names
-
 
 def plot_boxes_cv2(img_file, boxes, save_img_file=None, class_names=None, color=None):
     img = cv2.imread(img_file)
