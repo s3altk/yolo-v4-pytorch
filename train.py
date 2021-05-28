@@ -140,6 +140,7 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
 
     model.train()
     for epoch in range(epochs):
+        # Тренировка
         for batch, (X, y) in enumerate(train_loader):
           images, bboxes = X.to(device=device, dtype=torch.float32), y.to(device=device)
 
@@ -157,8 +158,22 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
             loss, current = loss.item(), batch * len(images)
             lr = scheduler.get_lr()[0] * config.batch
             logging.info(f'Эпоха {epoch}  [{current:>3d}/{n_train:>3d}]:  Функция потерь: {loss:>5f}   Скорость обучения: {lr}')
-
-        model.eval()
+        
+        # Проверка
+        inference_model = Yolov4(cfg.pretrained, n_classes=cfg.classes, inference=True)
+        
+        if torch.cuda.device_count() > 1:
+            inference_model.load_state_dict(model.module.state_dict())
+        else:
+            inference_model.load_state_dict(model.state_dict())
+            
+        inference_model.to(device=device)
+        
+        evaluator = evaluate(inference_model, val_loader, config, device)
+        del inference_model
+        
+        ############ ПЕРЕДЕЛАТЬ ##############                
+        '''model.eval()
         loss_sum, correct_sum = 0, 0
 
         with torch.no_grad():
@@ -175,8 +190,9 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
         avg_loss = loss_sum / n_val
         avg_acc = correct_sum / n_val
 
-        logging.info(f'Результаты:   Сред. знач. точности: {(100 * avg_acc):>0.1f}    Сред. знач. функции потерь: {avg_loss:>7f}\n')
-
+        logging.info(f'Результаты:   Сред. знач. точности: {(100 * avg_acc):>0.1f}    Сред. знач. функции потерь: {avg_loss:>7f}\n')'''
+        #########################################
+        
         if save_cp:
             try:
                 os.mkdir(save_dir)
