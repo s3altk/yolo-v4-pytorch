@@ -7,7 +7,7 @@ from PIL import Image
 from tool.utils import *
 
 class Yolov4(nn.Module):
-    def __init__(self, pretrained=None, n_classes=80):
+    def __init__(self, pretrained=None, n_classes=80, inference=False):
         super().__init__()
 
         output_ch = (4 + 1 + n_classes) * 3
@@ -17,8 +17,8 @@ class Yolov4(nn.Module):
         self.down3 = DownSample3()
         self.down4 = DownSample4()
         self.down5 = DownSample5()
-        self.neck = Neck()
-        self.head = Head(output_ch)
+        self.neck = Neck(inference)
+        self.head = Head(output_ch, n_classes, inference)
 
     def forward(self, input):
         d1 = self.down1(input)
@@ -142,8 +142,9 @@ class DownSample5(nn.Module):
         return x5
 
 class Neck(nn.Module):
-    def __init__(self):
+    def __init__(self, inference=False):
         super().__init__()
+        self.inference = inference
 
         self.conv1 = Conv_Bn_Activation(1024, 512, 1, 1, 'leaky')
         self.conv2 = Conv_Bn_Activation(512, 1024, 3, 1, 'leaky')
@@ -171,7 +172,7 @@ class Neck(nn.Module):
         self.conv19 = Conv_Bn_Activation(128, 256, 3, 1, 'leaky')
         self.conv20 = Conv_Bn_Activation(256, 128, 1, 1, 'leaky')
 
-    def forward(self, input, downsample4, downsample3):
+    def forward(self, input, downsample4, downsample3, inference=False):
         x1 = self.conv1(input)
         x2 = self.conv2(x1)
         x3 = self.conv3(x2)
@@ -183,7 +184,7 @@ class Neck(nn.Module):
         x5 = self.conv5(x4)
         x6 = self.conv6(x5)
         x7 = self.conv7(x6)
-        up = self.upsample1(x7, downsample4.size())
+        up = self.upsample1(x7, downsample4.size(), self.inference)
         x8 = self.conv8(downsample4)
         x8 = torch.cat([x8, up], dim=1)
         x9 = self.conv9(x8)
@@ -192,7 +193,7 @@ class Neck(nn.Module):
         x12 = self.conv12(x11)
         x13 = self.conv13(x12)
         x14 = self.conv14(x13)
-        up = self.upsample2(x14, downsample3.size())
+        up = self.upsample2(x14, downsample3.size(), self.inference)
         x15 = self.conv15(downsample3)
         x15 = torch.cat([x15, up], dim=1)
         x16 = self.conv16(x15)
@@ -203,8 +204,9 @@ class Neck(nn.Module):
         return x20, x13, x6
 
 class Head(nn.Module):
-    def __init__(self, output_ch):
+    def __init__(self, output_ch, n_classes, inference=False):
         super().__init__()
+        self.inference = inference
 
         self.conv1 = Conv_Bn_Activation(128, 256, 3, 1, 'leaky')
         self.conv2 = Conv_Bn_Activation(256, output_ch, 1, 1, 'linear', bn=False, bias=True)
@@ -308,10 +310,15 @@ class Upsample(nn.Module):
     def __init__(self):
         super(Upsample, self).__init__()
 
-    def forward(self, x, target_size):
+    def forward(self, x, target_size, inference=False):
         assert (x.data.dim() == 4)
-        _, _, H, W = target_size
-        return F.interpolate(x, size=(H, W), mode='nearest')
+        
+        if inference:
+            return x.view(x.size(0), x.size(1), x.size(2), 1, x.size(3), 1).\
+                    expand(x.size(0), x.size(1), x.size(2), target_size[2] // x.size(2), x.size(3), target_size[3] // x.size(3)).\
+                    contiguous().view(x.size(0), x.size(1), target_size[2], target_size[3])
+        else:        
+            return F.interpolate(x, size=(H, W), mode='nearest')
 
 class Mish(nn.Module):
     def __init__(self):
@@ -339,6 +346,10 @@ if  __name__ == "__main__":
     model.to(device=device)
     
     img = Image.open(img_file).convert('RGB')
+    
+    # Опционально:
+    #   Высота {320, 416, 512, 608, ... 320 + 96 * n}
+    #   Ширина {320, 416, 512, 608, ... 320 + 96 * m}
     sized_img = img.resize((608, 608))
     	
     try:
