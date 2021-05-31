@@ -5,6 +5,7 @@ import torch.nn.functional as F
 import os, sys
 from PIL import Image
 from tool.utils import *
+from tool.yolo_layer import *
 
 class Yolov4(nn.Module):
     def __init__(self, pretrained=None, n_classes=80, inference=False):
