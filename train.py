@@ -8,6 +8,7 @@ import numpy as np
 import logging
 import os, sys
 import argparse
+import cv2
 
 from tqdm import tqdm
 from cfg import Cfg
@@ -169,16 +170,19 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
             
         inference_model.to(device=device)
         
-        evaluator = evaluate(inference_model, val_loader, config, device)
-        del inference_model
-        
         ############ ПЕРЕДЕЛАТЬ ##############                
-        '''model.eval()
+        inference_model.eval()
         loss_sum, correct_sum = 0, 0
 
         with torch.no_grad():
             for X, y in val_loader:
-                images, bboxes = X.to(device=device, dtype=torch.float32), y.to(device=device)
+                images = [[cv2.resize(x, (cfg.w, cfg.h))] for x in X]
+                images = np.concatenate(images, axis=0)
+                images = images.transpose(0, 3, 1, 2)
+                images = torch.from_numpy(images).div(255.0)
+                images = images.to(device)
+                
+                bboxes = [{k: v.to(device) for k, v in t.items()} for t in y]
 
                 bboxes_pred = model(images)
                 
@@ -190,9 +194,11 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
         avg_loss = loss_sum / n_val
         avg_acc = correct_sum / n_val
 
-        logging.info(f'Результаты:   Сред. знач. точности: {(100 * avg_acc):>0.1f}    Сред. знач. функции потерь: {avg_loss:>7f}\n')'''
+        logging.info(f'Результаты:   Сред. знач. точности: {(100 * avg_acc):>0.1f}    Сред. знач. функции потерь: {avg_loss:>7f}\n')
         #########################################
         
+        del inference_model
+                
         if save_cp:
             try:
                 os.mkdir(save_dir)
