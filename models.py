@@ -344,7 +344,7 @@ class Upsample(nn.Module):
                     expand(x.size(0), x.size(1), x.size(2), target_size[2] // x.size(2), x.size(3), target_size[3] // x.size(3)).\
                     contiguous().view(x.size(0), x.size(1), target_size[2], target_size[3])
         else:        
-            return F.interpolate(x, size=(H, W), mode='nearest')
+            return F.interpolate(x, size=(target_size[2], target_size[3]), mode='nearest')
 
 class Mish(nn.Module):
     def __init__(self):
