@@ -61,6 +61,7 @@ def init_logger(log_file=None, log_dir=None, log_level=logging.INFO, mode='w', s
     log_file = os.path.join(log_dir, log_file)
 
     print(f'Файл логов находится в {log_file}')
+    print(f'--------------------------------------------------------------------')
     
     fmt = '%(asctime)s %(filename)s[line:%(lineno)d] %(levelname)s:\n%(message)s\n'
 
@@ -87,7 +88,7 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
     n_train = len(train_dataset)
     n_val = len(val_dataset)
 
-    logging.info(f'''Запуск обучения:
+    logging.info(f'''Параметры обучения:
             Кол-во эпох:                    {epochs}
             Размер партии:                  {config.batch}
             Размер мини-партии:             {config.batch // config.subdivisions}
@@ -103,6 +104,8 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
             Предобуч. модель:               {config.pretrained}
     ''')
 
+    print(f'Предупреждения:\n')
+    
     def burnin_schedule(i):
         if i < config.burn_in:
             factor = pow(i / config.burn_in, 4)
@@ -147,8 +150,10 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
                             pin_memory=True, drop_last=True, collate_fn=val_collate)
 
     model.train()
+    logging.info(f'\nОбучение началось...\n')
+        
     for epoch in range(epochs):
-        # Тренировка
+        # Обучение
         for batch, (X, Y) in enumerate(train_loader):
           images, bboxes = X.to(device=device, dtype=torch.float32), Y.to(device=device)
 
@@ -233,9 +238,9 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
         stats = coco_evaluator.coco_eval['bbox'].stats
 
         logging.info(f'''Эпоха {epoch + 1}
-                                AP:                {stats[0]:>5f}
-                                AP@50:             {stats[1]:>5f}
-                                AP@75:             {stats[2]:>5f}
+                AP:                {stats[0]:>5f}
+                AP@50:             {stats[1]:>5f}
+                AP@75:             {stats[2]:>5f}
         ''')
                 
         if save_cp:
@@ -415,7 +420,6 @@ if __name__ == "__main__":
     model.to(device=device)
 
     logging = init_logger(log_dir='log')
-    logging.info(f'Используется устройство: {device}')
 
     try:
         train(model=model,
