@@ -116,8 +116,8 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
 
         return images, bboxes
     
-    def val_collate(batch):
-        return tuple(zip(*batch))
+    '''def val_collate(batch):
+        return tuple(zip(*batch))'''
 
     def burnin_schedule(i):
         if i < config.burn_in:
@@ -137,7 +137,7 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
     criterion = Yolo_loss(device=device, batch=config.batch // config.subdivisions, n_classes=config.classes)
 
     train_loader = DataLoader(train_dataset, batch_size=config.batch // config.subdivisions, shuffle=True, num_workers=2, pin_memory=True, drop_last=True, collate_fn=train_collate)
-    val_loader = DataLoader(val_dataset, batch_size=config.batch // config.subdivisions, shuffle=True, num_workers=2, pin_memory=True, drop_last=True, collate_fn=val_collate)
+    # val_loader = DataLoader(val_dataset, batch_size=config.batch // config.subdivisions, shuffle=True, num_workers=2, pin_memory=True, drop_last=True, collate_fn=val_collate)
 
     model.train()
     for epoch in range(epochs):
@@ -158,20 +158,19 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
           if batch % (log_step * config.subdivisions) == 0:
             loss, current = loss.item(), batch * len(images)
             lr = scheduler.get_lr()[0] * config.batch
-            logging.info(f'Эпоха {epoch}  [{current:>3d}/{n_train:>3d}]:  Функция потерь: {loss:>5f}   Скорость обучения: {lr}')
+            logging.info(f'Эпоха {epoch + 1}  [{current:>3d}/{n_train:>3d}]:  Функция потерь: {loss:>5f}   Скорость обучения: {lr}')
         
-        # Проверка
-        inference_model = Yolov4(cfg.pretrained, n_classes=cfg.classes, inference=True)
+        # Оценка
+        '''inference_model = Yolov4(cfg.pretrained, n_classes=cfg.classes, inference=True)
         
         if torch.cuda.device_count() > 1:
             inference_model.load_state_dict(model.module.state_dict())
         else:
             inference_model.load_state_dict(model.state_dict())
             
-        inference_model.to(device=device)
-        
-        ############ ПЕРЕДЕЛАТЬ ##############                
+        inference_model.to(device=device)          
         inference_model.eval()
+        
         loss_sum, correct_sum = 0, 0
 
         with torch.no_grad():
@@ -181,8 +180,6 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
                 images = images.transpose(0, 3, 1, 2)
                 images = torch.from_numpy(images).div(255.0)
                 images = images.to(device)
-                
-                bboxes = [{k: v.to(device) for k, v in t.items()} for t in y]
 
                 bboxes_pred = model(images)
                 
@@ -195,9 +192,8 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
         avg_acc = correct_sum / n_val
 
         logging.info(f'Результаты:   Сред. знач. точности: {(100 * avg_acc):>0.1f}    Сред. знач. функции потерь: {avg_loss:>7f}\n')
-        #########################################
         
-        del inference_model
+        del inference_model'''
                 
         if save_cp:
             try:
