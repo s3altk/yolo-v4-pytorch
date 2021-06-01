@@ -16,6 +16,9 @@ from models import Yolov4
 from dataset import Yolo_dataset
 from easydict import EasyDict as edict
 
+from tool.coco_utils import convert_to_coco_api
+from tool.coco_eval import CocoEvaluator
+
 def get_args(**kwargs):
     parser = argparse.ArgumentParser(description='Обучение модели на изображениях', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
@@ -87,37 +90,18 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
     logging.info(f'''Запуск обучения:
             Кол-во эпох:                    {epochs}
             Размер партии:                  {config.batch}
-            Размер мини-партии:             {config.subdivisions}
+            Размер мини-партии:             {config.batch // config.subdivisions}
             Скорость обучения:              {config.learning_rate}
             Размер обуч. выборки:           {n_train}
             Размер провер. выборки:         {n_val}
             Сохранение модели:              {save_cp}
             Устройство:                     {device.type}
-            Размер изображений:             {config.w}x{config.h}
+            Размер изображений (Ш х В):     {config.w}x{config.h}
             Оптимизатор:                    {config.TRAIN_OPTIMIZER}
             Кол-во классов:                 {config.classes}
             Аннотация датасета:             {config.train_label}
+            Предобуч. модель:               {config.pretrained}
     ''')
-
-    def train_collate(batch):
-        images = []
-        bboxes = []
-
-        for img, box in batch:
-            images.append([img])
-            bboxes.append([box])
-
-        images = np.concatenate(images, axis=0)
-        images = images.transpose(0, 3, 1, 2)
-        images = torch.from_numpy(images).div(255.0)
-
-        bboxes = np.concatenate(bboxes, axis=0)
-        bboxes = torch.from_numpy(bboxes)
-
-        return images, bboxes
-    
-    '''def val_collate(batch):
-        return tuple(zip(*batch))'''
 
     def burnin_schedule(i):
         if i < config.burn_in:
@@ -136,14 +120,37 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
 
     criterion = Yolo_loss(device=device, batch=config.batch // config.subdivisions, n_classes=config.classes)
 
-    train_loader = DataLoader(train_dataset, batch_size=config.batch // config.subdivisions, shuffle=True, num_workers=2, pin_memory=True, drop_last=True, collate_fn=train_collate)
-    # val_loader = DataLoader(val_dataset, batch_size=config.batch // config.subdivisions, shuffle=True, num_workers=2, pin_memory=True, drop_last=True, collate_fn=val_collate)
+    def train_collate(batch):
+        images = []
+        bboxes = []
+
+        for img, box in batch:
+            images.append([img])
+            bboxes.append([box])
+
+        images = np.concatenate(images, axis=0)
+        images = images.transpose(0, 3, 1, 2)
+        images = torch.from_numpy(images).div(255.0)
+
+        bboxes = np.concatenate(bboxes, axis=0)
+        bboxes = torch.from_numpy(bboxes)
+
+        return images, bboxes
+    
+    def val_collate(batch):
+        return tuple(zip(*batch))
+    
+    train_loader = DataLoader(train_dataset, batch_size=config.batch // config.subdivisions, shuffle=True, num_workers=2,
+                              pin_memory=True, drop_last=True, collate_fn=train_collate)
+    
+    val_loader = DataLoader(val_dataset, batch_size=config.batch // config.subdivisions, shuffle=True, num_workers=2,
+                            pin_memory=True, drop_last=True, collate_fn=val_collate)
 
     model.train()
     for epoch in range(epochs):
         # Тренировка
-        for batch, (X, y) in enumerate(train_loader):
-          images, bboxes = X.to(device=device, dtype=torch.float32), y.to(device=device)
+        for batch, (X, Y) in enumerate(train_loader):
+          images, bboxes = X.to(device=device, dtype=torch.float32), Y.to(device=device)
 
           bboxes_pred = model(images)
 
@@ -161,7 +168,7 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
             logging.info(f'Эпоха {epoch + 1}  [{current:>3d}/{n_train:>3d}]:  Функция потерь: {loss:>5f}   Скорость обучения: {lr}')
         
         # Оценка
-        '''inference_model = Yolov4(cfg.pretrained, n_classes=cfg.classes, inference=True)
+        inference_model = Yolov4(config.pretrained, n_classes=config.classes, inference=True)
         
         if torch.cuda.device_count() > 1:
             inference_model.load_state_dict(model.module.state_dict())
@@ -171,29 +178,65 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
         inference_model.to(device=device)          
         inference_model.eval()
         
-        loss_sum, correct_sum = 0, 0
+        coco = convert_to_coco_api(val_loader.dataset, bbox_fmt='coco')
+        coco_evaluator = CocoEvaluator(coco, iou_types = ['bbox'], bbox_fmt='coco')
 
         with torch.no_grad():
-            for X, y in val_loader:
-                images = [[cv2.resize(x, (cfg.w, cfg.h))] for x in X]
+            for X, Y in val_loader:
+                images = [[cv2.resize(x, (config.w, config.h))] for x in X]
                 images = np.concatenate(images, axis=0)
                 images = images.transpose(0, 3, 1, 2)
                 images = torch.from_numpy(images).div(255.0)
-                images = images.to(device)
+                images = images.to(device=device)
+                targets = [{k: v.to(device=device) for k, v in y.items()} for y in Y]
 
-                bboxes_pred = model(images)
+                if torch.cuda.is_available():
+                    torch.cuda.synchronize()
+            
+                outputs  = inference_model(images)
                 
-                loss_sum += criterion(bboxes_pred, bboxes).item()
+                res = {}
                 
-                correct = torch.eq(torch.round(bboxes_pred).type(bboxes.type()), bboxes).view(-1)
-                correct_sum += torch.sum(correct).item()
+                for img, target, boxes, confs in zip(images, targets, outputs[0], outputs[1]):
+                    img_height, img_width = img.shape[:2]
+                    
+                    boxes = boxes.squeeze(2).cpu().detach().numpy()
+                    boxes[...,2:] = boxes[...,2:] - boxes[...,:2] # [x1, y1, x2, y2] --> [x1, y1, w, h]
+                    boxes[...,0] = boxes[...,0] * img_width
+                    boxes[...,1] = boxes[...,1] * img_height
+                    boxes[...,2] = boxes[...,2] * img_width
+                    boxes[...,3] = boxes[...,3] * img_height
+                    boxes = torch.as_tensor(boxes, dtype=torch.float32)
 
-        avg_loss = loss_sum / n_val
-        avg_acc = correct_sum / n_val
+                    confs = confs.cpu().detach().numpy()
+                    
+                    labels = np.argmax(confs, axis=1).flatten()
+                    labels = torch.as_tensor(labels, dtype=torch.int64)
+                    
+                    scores = np.max(confs, axis=1).flatten()
+                    scores = torch.as_tensor(scores, dtype=torch.float32)
+                    
+                    res[target["image_id"].item()] = {
+                        "boxes": boxes,
+                        "scores": scores,
+                        "labels": labels,
+                    }
+                
+                coco_evaluator.update(res)
 
-        logging.info(f'Результаты:   Сред. знач. точности: {(100 * avg_acc):>0.1f}    Сред. знач. функции потерь: {avg_loss:>7f}\n')
+            coco_evaluator.synchronize_between_processes()
+            coco_evaluator.accumulate()
+            coco_evaluator.summarize()    
         
-        del inference_model'''
+        del inference_model
+
+        stats = coco_evaluator.coco_eval['bbox'].stats
+
+        logging.info(f'''Эпоха {epoch + 1}
+                                AP:                {stats[0]:>5f}
+                                AP@50:             {stats[1]:>5f}
+                                AP@75:             {stats[2]:>5f}
+        ''')
                 
         if save_cp:
             try:
