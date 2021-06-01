@@ -97,14 +97,12 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
             Размер провер. выборки:         {n_val}
             Сохранение модели:              {save_cp}
             Устройство:                     {device.type}
-            Размер изображений (Ш х В):     {config.w}x{config.h}
+            Размер изображений (Ш х В):     {config.w} x {config.h}
             Оптимизатор:                    {config.TRAIN_OPTIMIZER}
             Кол-во классов:                 {config.classes}
             Аннотация датасета:             {config.train_label}
             Предобуч. модель:               {config.pretrained}
     ''')
-
-    print(f'Предупреждения:\n')
     
     def burnin_schedule(i):
         if i < config.burn_in:
@@ -150,7 +148,7 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
                             pin_memory=True, drop_last=True, collate_fn=val_collate)
 
     model.train()
-    logging.info(f'\nОбучение началось...\n')
+    logging.info(f'Обучение началось...\n')
         
     for epoch in range(epochs):
         # Обучение
@@ -170,7 +168,7 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
           if batch % (log_step * config.subdivisions) == 0:
             loss, current = loss.item(), batch * len(images)
             lr = scheduler.get_lr()[0] * config.batch
-            logging.info(f'Эпоха {epoch + 1}  [{current:>3d}/{n_train:>3d}]:  Функция потерь: {loss:>5f}   Скорость обучения: {lr}')
+            logging.info(f'\nЭпоха {epoch + 1}  [{current:>3d}/{n_train:>3d}]:  Функция потерь: {loss:>5f}   Скорость обучения: {lr}')
         
         # Оценка
         inference_model = Yolov4(config.pretrained, n_classes=config.classes, inference=True)
