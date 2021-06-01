@@ -123,7 +123,7 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
     def train_collate(batch):
         images = []
         bboxes = []
-
+        
         for img, box in batch:
             images.append([img])
             bboxes.append([box])
@@ -157,7 +157,7 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
           loss = criterion(bboxes_pred, bboxes)
           loss.backward()
 
-          if batch  % config.subdivisions == 0:
+          if batch % config.subdivisions == 0:
             optimizer.step()
             scheduler.step()
             model.zero_grad()
