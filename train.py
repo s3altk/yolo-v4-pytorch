@@ -1,4 +1,5 @@
 import torch
+import torchmetrics
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
@@ -145,7 +146,7 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
                               pin_memory=True, drop_last=True, collate_fn=train_collate)
     
     val_loader = DataLoader(val_dataset, batch_size=config.batch // config.subdivisions, shuffle=True, num_workers=2,
-                            pin_memory=True, drop_last=True, collate_fn=val_collate)
+                            pin_memory=True, drop_last=True, collate_fn=train_collate)
 
     model.train()
     logging.info(f'Обучение началось...\n')
@@ -157,7 +158,7 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
 
           bboxes_pred = model(images)
 
-          loss = criterion(bboxes_pred, bboxes)
+          loss, _ = criterion(bboxes_pred, bboxes)
           loss.backward()
 
           if batch % config.subdivisions == 0:
@@ -170,8 +171,22 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
             lr = scheduler.get_lr()[0] * config.batch
             logging.info(f'\nЭпоха {epoch + 1}  [{current:>3d}/{n_train:>3d}]:  Функция потерь: {loss:>5f}   Скорость обучения: {lr}')
         
+        model.eval()
+        
         # Оценка
-        inference_model = Yolov4(config.pretrained, n_classes=config.classes, inference=True)
+        with torch.no_grad():
+            for batch, (X, Y) in enumerate(val_loader):
+                images, bboxes = X.to(device=device, dtype=torch.float32), Y.to(device=device)
+
+                bboxes_pred = model(images)
+                
+                loss, acc = criterion(bboxes_pred, bboxes)
+                
+                loss = loss.item()               
+                
+                logging.info(f'\nЭпоха {epoch + 1}  [{current:>3d}/{n_train:>3d}]:  Функция потерь: {(loss):>5f}    Точность: {acc}')
+        
+        '''inference_model = Yolov4(config.pretrained, n_classes=config.classes, inference=True)
         
         if torch.cuda.device_count() > 1:
             inference_model.load_state_dict(model.module.state_dict())
@@ -239,7 +254,7 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
                 AP:                {stats[0]:>5f}
                 AP@50:             {stats[1]:>5f}
                 AP@75:             {stats[2]:>5f}
-        ''')
+        ''')'''
                 
         if save_cp:
             try:
@@ -265,7 +280,7 @@ class Yolo_loss(nn.Module):
         self.n_anchors = n_anchors
         self.anchors = [[12, 16], [19, 36], [40, 28], [36, 75], [76, 55], [72, 146], [142, 110], [192, 243], [459, 401]]
         self.anch_masks = [[0, 1, 2], [3, 4, 5], [6, 7, 8]]
-        self.ignore_thre = 0.5
+        self.ignore_thres = 0.5
         self.masked_anchors, self.ref_anchors, self.grid_x, self.grid_y, self.anchor_w, self.anchor_h = [], [], [], [], [], []
 
         for i in range(3):
@@ -326,7 +341,7 @@ class Yolo_loss(nn.Module):
 
             pred_ious = bboxes_iou(pred[b].view(-1, 4), truth_box, xyxy=False)
             pred_best_iou, _ = pred_ious.max(dim=1)
-            pred_best_iou = (pred_best_iou > self.ignore_thre)
+            pred_best_iou = (pred_best_iou > self.ignore_thres)
             pred_best_iou = pred_best_iou.view(pred[b].shape[:3])
             obj_mask[b] = ~ pred_best_iou
 
@@ -348,7 +363,8 @@ class Yolo_loss(nn.Module):
 
     def forward(self, xin, labels=None):
         loss, loss_xy, loss_wh, loss_obj, loss_cls, loss_l2 = 0, 0, 0, 0, 0, 0
-
+        metric = torchmetrics.Accuracy()
+        
         for output_id, output in enumerate(xin):
             batchsize = output.shape[0]
             fsize = output.shape[2]
@@ -379,10 +395,13 @@ class Yolo_loss(nn.Module):
             loss_obj += F.binary_cross_entropy(input=output[..., 4], target=target[..., 4], size_average=False)
             loss_cls += F.binary_cross_entropy(input=output[..., 5:], target=target[..., 5:], size_average=False)
             loss_l2 += F.mse_loss(input=output, target=target, size_average=False)
+            
+            batch_acc = metric(output, target)
 
         loss = loss_xy + loss_wh + loss_obj + loss_cls
-
-        return loss
+        acc = metric.compute()
+        
+        return loss, acc
 
 def bboxes_iou(bboxes_a, bboxes_b, xyxy=True):
     if bboxes_a.shape[1] != 4 or bboxes_b.shape[1] != 4:
