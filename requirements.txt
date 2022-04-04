@@ -10,3 +10,4 @@ folium==0.2.1
 imgaug==0.2.5
 pycocotools
 torchmetrics
+opencv_python
