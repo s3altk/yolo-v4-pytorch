@@ -37,9 +37,7 @@ def get_args(**kwargs):
     
     args = vars(parser.parse_args())
     cfg = kwargs
-
-    for k in args.keys():
-        cfg[k] = args.get(k)
+    cfg.update(args)
 
     return edict(cfg)
 
@@ -83,8 +81,8 @@ def init_logger(log_file=None, log_dir=None, log_level=logging.INFO, mode='w', s
     return logging
 
 def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True, log_step=20, img_scale=0.5):
-    train_dataset = Yolo_dataset(config.train_label, config)
-    val_dataset = Yolo_dataset(config.val_label, config)
+    train_dataset = Yolo_dataset(config.train_label, config, train=True)
+    val_dataset = Yolo_dataset(config.val_label, config, train=False)
 
     n_train = len(train_dataset)
     n_val = len(val_dataset)
@@ -119,7 +117,6 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
 
     optimizer = optim.Adam(model.parameters(), lr=config.learning_rate / config.batch, betas=(0.9, 0.999), eps=1e-08)
     scheduler = optim.lr_scheduler.LambdaLR(optimizer, burnin_schedule)
-
     criterion = Yolo_loss(device=device, batch=config.batch // config.subdivisions, n_classes=config.classes)
 
     def train_collate(batch):
@@ -146,7 +143,7 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
                               pin_memory=True, drop_last=True, collate_fn=train_collate)
     
     val_loader = DataLoader(val_dataset, batch_size=config.batch // config.subdivisions, shuffle=True, num_workers=2,
-                            pin_memory=True, drop_last=True, collate_fn=train_collate)
+                            pin_memory=True, drop_last=True, collate_fn=val_collate)
 
     model.train()
     logging.info(f'Обучение началось...\n')
@@ -171,94 +168,27 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
             lr = scheduler.get_lr()[0] * config.batch
             logging.info(f'\nЭпоха {epoch + 1}  [{current:>3d}/{n_train:>3d}]:  Функция потерь: {loss:>5f}   Скорость обучения: {lr}')
         
-        model.eval()
-        
-        # Оценка
-        with torch.no_grad():
-            for batch, (X, Y) in enumerate(val_loader):
-                images, bboxes = X.to(device=device, dtype=torch.float32), Y.to(device=device)
-
-                bboxes_pred = model(images)
-                
-                loss, acc = criterion(bboxes_pred, bboxes)
-                
-                loss = loss.item()               
-                
-                logging.info(f'\nЭпоха {epoch + 1}  [{current:>3d}/{n_train:>3d}]:  Функция потерь: {(loss):>5f}    Точность: {acc}')
-        
-        '''inference_model = Yolov4(config.pretrained, n_classes=config.classes, inference=True)
+        eval_model = Yolov4(cfg.pretrained, n_classes=cfg.classes, inference=True)
         
         if torch.cuda.device_count() > 1:
-            inference_model.load_state_dict(model.module.state_dict())
-        else:
-            inference_model.load_state_dict(model.state_dict())
-            
-        inference_model.to(device=device)          
-        inference_model.eval()
+                eval_model.load_state_dict(model.module.state_dict())
+            else:
+                eval_model.load_state_dict(model.state_dict())
         
-        coco = convert_to_coco_api(val_loader.dataset, bbox_fmt='coco')
-        coco_evaluator = CocoEvaluator(coco, iou_types = ['bbox'], bbox_fmt='coco')
-
-        with torch.no_grad():
-            for X, Y in val_loader:
-                images = [[cv2.resize(x, (config.w, config.h))] for x in X]
-                images = np.concatenate(images, axis=0)
-                images = images.transpose(0, 3, 1, 2)
-                images = torch.from_numpy(images).div(255.0)
-                images = images.to(device=device)
-                targets = [{k: v.to(device=device) for k, v in y.items()} for y in Y]
-
-                if torch.cuda.is_available():
-                    torch.cuda.synchronize()
-            
-                outputs  = inference_model(images)
-                
-                res = {}
-                
-                for img, target, boxes, confs in zip(images, targets, outputs[0], outputs[1]):
-                    img_height, img_width = img.shape[:2]
-                    
-                    boxes = boxes.squeeze(2).cpu().detach().numpy()
-                    boxes[...,2:] = boxes[...,2:] - boxes[...,:2] # [x1, y1, x2, y2] --> [x1, y1, w, h]
-                    boxes[...,0] = boxes[...,0] * img_width
-                    boxes[...,1] = boxes[...,1] * img_height
-                    boxes[...,2] = boxes[...,2] * img_width
-                    boxes[...,3] = boxes[...,3] * img_height
-                    boxes = torch.as_tensor(boxes, dtype=torch.float32)
-
-                    confs = confs.cpu().detach().numpy()
-                    
-                    labels = np.argmax(confs, axis=1).flatten()
-                    labels = torch.as_tensor(labels, dtype=torch.int64)
-                    
-                    scores = np.max(confs, axis=1).flatten()
-                    scores = torch.as_tensor(scores, dtype=torch.float32)
-                    
-                    res[target["image_id"].item()] = {
-                        "boxes": boxes,
-                        "scores": scores,
-                        "labels": labels,
-                    }
-                
-                coco_evaluator.update(res)
-
-            coco_evaluator.synchronize_between_processes()
-            coco_evaluator.accumulate()
-            coco_evaluator.summarize()    
+        eval_model.to(device)
+        evaluator = evaluate(eval_model, val_loader, config, device)
+        del eval_model
         
-        del inference_model
-
-        stats = coco_evaluator.coco_eval['bbox'].stats
-
+        stats = evaluator.coco_eval['bbox'].stats
         logging.info(f'''Эпоха {epoch + 1}
                 AP:                {stats[0]:>5f}
                 AP@50:             {stats[1]:>5f}
                 AP@75:             {stats[2]:>5f}
-        ''')'''
+        ''')
                 
         if save_cp:
             try:
-                os.mkdir(save_dir)
+                os.makedirs(save_dir, exist_ok=True)
                 logging.info(f'Создана директория {save_dir} для сохранения')
             except OSError:
                 pass
@@ -268,6 +198,63 @@ def train(model, device, config, save_dir, epochs=5, batch_size=1, save_cp=True,
 
     logging.info(f'Обучение завершено!')
 
+@torch.no_grad()
+def evaluate(model, data_loader, cfg, device, logger=None, **kwargs):
+    model.eval()
+
+    coco = convert_to_coco_api(data_loader.dataset, bbox_fmt='coco')
+    coco_evaluator = CocoEvaluator(coco, iou_types = ["bbox"], bbox_fmt='coco')
+
+    for images, targets in data_loader:
+        model_input = [[cv2.resize(img, (cfg.w, cfg.h))] for img in images]
+        model_input = np.concatenate(model_input, axis=0)
+        model_input = model_input.transpose(0, 3, 1, 2)
+        model_input = torch.from_numpy(model_input).div(255.0)
+        model_input = model_input.to(device)
+        
+        targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+            
+        model_time = time.time()
+        outputs = model(model_input)
+        model_time = time.time() - model_time
+        res = {}
+
+        for img, target, boxes, confs in zip(images, targets, outputs[0], outputs[1]):
+            img_height, img_width = img.shape[:2]
+
+            boxes = boxes.squeeze(2).cpu().detach().numpy()
+            boxes[...,2:] = boxes[...,2:] - boxes[...,:2]
+            boxes[...,0] = boxes[...,0] * img_width
+            boxes[...,1] = boxes[...,1] * img_height
+            boxes[...,2] = boxes[...,2] * img_width
+            boxes[...,3] = boxes[...,3] * img_height
+            boxes = torch.as_tensor(boxes, dtype=torch.float32)
+
+            confs = confs.cpu().detach().numpy()
+            labels = np.argmax(confs, axis=1).flatten()
+            labels = torch.as_tensor(labels, dtype=torch.int64)
+            
+            scores = np.max(confs, axis=1).flatten()
+            scores = torch.as_tensor(scores, dtype=torch.float32)
+            
+            res[target["image_id"].item()] = {
+                "boxes": boxes,
+                "scores": scores,
+                "labels": labels,
+            }
+            
+        evaluator_time = time.time()
+        coco_evaluator.update(res)
+        evaluator_time = time.time() - evaluator_time
+
+    coco_evaluator.synchronize_between_processes()
+    coco_evaluator.accumulate()
+    coco_evaluator.summarize()
+
+    return coco_evaluator
 
 class Yolo_loss(nn.Module):
     def __init__(self, n_classes=80, n_anchors=3, device=None, batch=2):
