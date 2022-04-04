@@ -8,7 +8,7 @@ from torch.utils.data.dataset import Dataset
 from cfg import Cfg
 
 class Yolo_dataset(Dataset):
-    def __init__(self, lable_path, cfg):
+    def __init__(self, lable_path, cfg, train=True):
         super(Yolo_dataset, self).__init__()
 
         if cfg.mixup == 2:
@@ -19,6 +19,7 @@ class Yolo_dataset(Dataset):
             raise
 
         self.cfg = cfg
+        self.train = train
 
         truth = {}
         labels = open(lable_path, 'r', encoding='utf-8')
@@ -30,12 +31,16 @@ class Yolo_dataset(Dataset):
                 truth[data[0]].append([int(part) for part in item.split(',')])
 
         self.truth = truth
+        self.imgs = list(self.truth.keys())
 
     def __len__(self):
         return len(self.truth.keys())
 
     def __getitem__(self, index):
-        img_file = list(self.truth.keys())[index]
+        if not self.train:
+            return self._get_val_item(index)
+        
+        img_file = self.imgs[index]
         bboxes = np.array(self.truth.get(img_file), dtype=np.float)        
         img_path = os.path.join(self.cfg.dataset_dir, img_file)
 
@@ -160,8 +165,33 @@ class Yolo_dataset(Dataset):
             out_bboxes1[:min(out_bboxes.shape[0], self.cfg.boxes)] = out_bboxes[:min(out_bboxes.shape[0], self.cfg.boxes)]
         
         return out_img, out_bboxes1
+    
+    def _get_val_item(self, index):
+        img_path = self.imgs[index]
+        bboxes_with_cls_id = np.array(self.truth.get(img_path), dtype=np.float)
+        
+        img = cv2.imread(os.path.join(self.cfg.dataset_dir, img_path))
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
+        num_objs = len(bboxes_with_cls_id)
+        target = {}
 
+        boxes = bboxes_with_cls_id[...,:4]
+        boxes[..., 2:] = boxes[..., 2:] - boxes[..., :2]
+        
+        target['boxes'] = torch.as_tensor(boxes, dtype=torch.float32)
+        target['labels'] = torch.as_tensor(bboxes_with_cls_id[...,-1].flatten(), dtype=torch.int64)
+        target['image_id'] = torch.tensor([get_image_id(img_path)])
+        target['area'] = (target['boxes'][:,3])*(target['boxes'][:,2])
+        target['iscrowd'] = torch.zeros((num_objs,), dtype=torch.int64)
+        
+        return img, target
+
+def get_image_id(filename:str) -> int:
+    parts = filename.split('/')
+    id = int(parts[-1][0:-4])
+    return id
+    
 def rand_uniform_strong(min, max):
     if min > max:
         swap = min
@@ -372,8 +402,8 @@ def draw_box(img, bboxes):
     return img
 
 if __name__ == "__main__":
-    random.seed(2021)
-    np.random.seed(2021)
+    random.seed(2022)
+    np.random.seed(2022)
 
     Cfg.dataset_dir = '/mnt/e/Dataset'
     dataset = Yolo_dataset(Cfg.train_label, Cfg)
